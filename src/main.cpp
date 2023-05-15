@@ -25,12 +25,11 @@ const String Header = "@@@@@@@@@@@@@@ DATALOGGER @@@@@@@@@@@@@@\n"; //1st thing 
 SPIClass spi = SPIClass(VSPI); //Custom spi pins shit
 
 //##### Define functions #####
-void checkSerial(void);
+void CHECK_Serial(void);    //Reads keyboard keys
 void Read_Can(void);        //Catch the id and create new line on the matrix
-void write_can_vector(int); //Checks the line on the matrix and write the 8 bytes in
 void Init_Sd_Card(void);    //Setup SDcard
-void DATA_String(void);
-void CLEAN_matrix(void);
+void DATA_String(void);     //create a msg to send to the sd card
+void CLEAN_Matrix(void);    //put 0's on the matrix
 
 //####################### SD CARD FUNCTIONS NO MEXER #######################
 //##########################################################################
@@ -52,7 +51,6 @@ void writeFile(fs::FS &fs, const char *path, const char *message) {
 }
 void appendFile(fs::FS &fs, const char *path, const char *message) {
   //Serial.printf("Appending to file: %s\n", path);
-
   File file = fs.open(path, FILE_APPEND);
   if (!file) {
     //Serial.println("Failed to open file for appending");
@@ -81,16 +79,14 @@ void TASK1_PRINT(void* arg){
         }
         printf("|\n");
       }
-        printf("_____________________");
+        printf("__________________________");
         printf("\n");
     }
-
     if(flag4==1){
       flag4 = !flag4;
       printf("MATRIX CLEANED\r\n");
-      CLEAN_matrix();
+      CLEAN_Matrix();
     }
-    
     vTaskDelay(300/portTICK_PERIOD_MS);
   }
 }
@@ -101,7 +97,7 @@ void TASK2_READ_CAN(void* arg){
     }
     Read_Can();
     digitalWrite(ON_BOARD_LED,LOW);
-   // vTaskDelay(5/portTICK_PERIOD_MS);
+    //vTaskDelay(5/portTICK_PERIOD_MS);
   }
 }
 void TASK3_WRITE_SD(void* arg){
@@ -139,19 +135,23 @@ void setup() {
   xTaskCreate(TASK1_PRINT,"task 1",10000,NULL,tskIDLE_PRIORITY,NULL);
   xTaskCreate(TASK2_READ_CAN,"task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
   xTaskCreate(TASK3_WRITE_SD,"task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
+
+  delay(500);//just a litle break before it starts to read
+  CLEAN_Matrix();
   
   printf("\n########################### DATALOGGER ###########################\r\n\n");
   printf("1 - Show Tasks\r\n");
   printf("2 - Show Matrix\r\n");
   printf("3 - Write to SD Card\r\n");
   printf("4 - Clean Matrix\r\n");
+
 }
 
 void loop() {
-  checkSerial();
+  CHECK_Serial();
 }
 
-void checkSerial(){
+void CHECK_Serial(){
   if (Serial.available()) {
     char c = Serial.read();
     switch (c) {
@@ -200,7 +200,6 @@ void Init_Sd_Card(){ //Setup SDcard
   file.close();
 }
 
-
 void Read_Can(){//catch the id and create new line on the matrix
   int ID;
   int packetSize = CAN.parsePacket();
@@ -230,13 +229,6 @@ void Read_Can(){//catch the id and create new line on the matrix
   }
 }
 
-void write_can_vector(int row){ // Checks the line on the matrix and write the 8 bytes in
- // printf("ola\r\n");
-  for(int j = 0; j < 8;j ++){
-    can_vector[row][j+1]=CAN.read();//[x,b0,b1,b2,b3,b4,b5,b6,b7]
-  }
-}
-
 void DATA_String(){ //Take the matrix and tranforms it to a string to write in SDcard
   char dataMessage[1000];
   dataMessage[0] = '\0';
@@ -250,7 +242,7 @@ void DATA_String(){ //Take the matrix and tranforms it to a string to write in S
     appendFile(SD, file_name , dataMessage);
 }
 
-void CLEAN_matrix(){
+void CLEAN_Matrix(){
   for (int k = 0; k < MAX_SIZE; k++) {
     for (int j = 0; j < 9; j++) {
         can_vector[i][j] = 0;
