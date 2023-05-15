@@ -14,8 +14,8 @@
 #define ON_BOARD_LED 25 //led pcb datalogger
 
 
-int flag1=0,flag2=0,flag3=0,i=0; 
-
+int flag1=0,flag2=0,flag3=0,flag4=0,i=0; 
+long int previousMillis=0;
 unsigned int can_vector[MAX_SIZE][9];
 unsigned int eeprom_count,eeprom_print;
 char file_name[20];
@@ -30,6 +30,7 @@ void Read_Can(void);        //Catch the id and create new line on the matrix
 void write_can_vector(int); //Checks the line on the matrix and write the 8 bytes in
 void Init_Sd_Card(void);    //Setup SDcard
 void DATA_String(void);
+void CLEAN_matrix(void);
 
 //####################### SD CARD FUNCTIONS NO MEXER #######################
 //##########################################################################
@@ -67,7 +68,7 @@ void appendFile(fs::FS &fs, const char *path, const char *message) {
 //##########################################################################
 //##########################################################################
 
-void TASK1code(void* arg){
+void TASK1_PRINT(void* arg){
   for(;;){
     if(flag1==1){
       printf("task1\r\n");
@@ -83,48 +84,27 @@ void TASK1code(void* arg){
         printf("_____________________");
         printf("\n");
     }
+
+    if(flag4==1){
+      flag4 = !flag4;
+      printf("MATRIX CLEANED\r\n");
+      CLEAN_matrix();
+    }
     
     vTaskDelay(300/portTICK_PERIOD_MS);
   }
 }
-void TASK2code(void* arg){
+void TASK2_READ_CAN(void* arg){
   for(;;){
     if(flag1==1){
       printf("task2\r\n");
     }
-    int ID;
-    int packetSize = CAN.parsePacket();
-    
-    if (packetSize != 0){
-        digitalWrite(ON_BOARD_LED,HIGH);
-        ID = CAN.packetId();
-        int found;
-        do {// check if ID already exists in the vector
-             found = 0;
-            for (int j = 0; j < i; j++) {
-                if (can_vector[j][0] == ID) {
-                    //printf("ID already exists in the matrix: %d,%d,%d\n",i,j,found);
-                    int row=j;
-                    for(int k = 0; k < 8;k ++){//LER BYTES!
-                      can_vector[row][k+1]=CAN.read();//[x,b0,b1,b2,b3,b4,b5,b6,b7]
-                    }
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) {
-                can_vector[i][0] = ID;
-                i++;
-                //printf("ID added to the matrix.\n");
-            }
-          
-        } while (i < MAX_SIZE && found==0);
-        digitalWrite(ON_BOARD_LED,LOW);
-    }
+    Read_Can();
+    digitalWrite(ON_BOARD_LED,LOW);
    // vTaskDelay(5/portTICK_PERIOD_MS);
   }
 }
-void TASK3code(void* arg){
+void TASK3_WRITE_SD(void* arg){
   for(;;){
     if(flag3==1){
       unsigned long currentMillis = millis();
@@ -156,14 +136,15 @@ void setup() {
 
   pinMode(ON_BOARD_LED,OUTPUT);
   
-  xTaskCreate(TASK1code,"task 1",10000,NULL,tskIDLE_PRIORITY,NULL);
-  xTaskCreate(TASK2code,"task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
-  xTaskCreate(TASK3code,"task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK1_PRINT,"task 1",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK2_READ_CAN,"task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK3_WRITE_SD,"task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
   
   printf("\n########################### DATALOGGER ###########################\r\n\n");
   printf("1 - Show Tasks\r\n");
   printf("2 - Show Matrix\r\n");
   printf("3 - Write to SD Card\r\n");
+  printf("4 - Clean Matrix\r\n");
 }
 
 void loop() {
@@ -173,12 +154,19 @@ void loop() {
 void checkSerial(){
   if (Serial.available()) {
     char c = Serial.read();
-    if (c == '1') {
-      flag1 = !flag1;
-    }else if (c == '2') {
-      flag2 = !flag2;
-    }else if (c == '3') {
-      flag3 = !flag3;
+    switch (c) {
+    case '1':
+        flag1 = !flag1;
+        break;
+    case '2':
+        flag2 = !flag2;
+        break;
+    case '3':
+        flag3 = !flag3;
+        break;
+    case '4':
+        flag4 = !flag4;
+        break;
     }
   }
 }
@@ -212,31 +200,35 @@ void Init_Sd_Card(){ //Setup SDcard
   file.close();
 }
 
-/*
+
 void Read_Can(){//catch the id and create new line on the matrix
-  int ID,i=0;
-    int packetSize = CAN.parsePacket();
-    if (packetSize != 0){
-        ID = CAN.packetId();
-        do {// check if ID already exists in the vector
-            int found = 0;
-            for (int j = 0; j < i; j++) {
-                if (can_vector[j][0] == ID) {
-                    printf("ID already exists in the matrix.\n");
-                    write_can_vector(j);//send row to function
-                    found = 1;
-                    break;
-                }
-            }
-            if (!found) {
-                write_can_vector(i);
-                can_vector[i][0] = ID;
-                i++;
-                printf("ID added to the matrix.\n");
-            }
-        } while (i < MAX_SIZE);
-    }
-}*/
+  int ID;
+  int packetSize = CAN.parsePacket();
+  if (packetSize != 0){
+    digitalWrite(ON_BOARD_LED,HIGH);
+    ID = CAN.packetId();
+    int found;
+    do {// check if ID already exists in the vector
+      found = 0;
+      for (int j = 0; j < i; j++) {
+        if (can_vector[j][0] == ID) {
+          //printf("ID already exists in the matrix: %d,%d,%d\n",i,j,found);
+          int row=j;
+          for(int k = 0; k < 8;k ++){//LER BYTES!
+            can_vector[row][k+1]=CAN.read();//[x,b0,b1,b2,b3,b4,b5,b6,b7]
+          }
+          found = 1;
+          break;
+        }
+      }
+      if (!found) {
+        can_vector[i][0] = ID;
+        i++;
+        //printf("ID added to the matrix.\n");
+      } 
+    } while (i < MAX_SIZE && found==0);
+  }
+}
 
 void write_can_vector(int row){ // Checks the line on the matrix and write the 8 bytes in
  // printf("ola\r\n");
@@ -256,5 +248,13 @@ void DATA_String(){ //Take the matrix and tranforms it to a string to write in S
     sprintf(dataMessage + strlen(dataMessage),"\n");
   }
     appendFile(SD, file_name , dataMessage);
+}
+
+void CLEAN_matrix(){
+  for (int k = 0; k < MAX_SIZE; k++) {
+    for (int j = 0; j < 9; j++) {
+        can_vector[i][j] = 0;
+    }
+  }
 }
 
