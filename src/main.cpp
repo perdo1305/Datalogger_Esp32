@@ -83,7 +83,7 @@ void TASK1_PRINT(void* arg){
         printf("\n");
     }
     if(flag4==1){
-      flag4 = !flag4;
+      flag4 = 0;
       printf("MATRIX CLEANED\r\n");
       CLEAN_Matrix();
     }
@@ -106,10 +106,10 @@ void TASK3_WRITE_SD(void* arg){
       unsigned long currentMillis = millis();
       if (currentMillis - previousMillis >= 200) {
         previousMillis = currentMillis;
-        printf("WRITING TO WRITE! EEPROM:%d\r\n",eeprom_print);
+        printf("WRITING TO SD CARD! EEPROM:%d\r\n",eeprom_print);
       }
-      DATA_String();
     }
+    DATA_String();
     vTaskDelay(5/portTICK_PERIOD_MS);
   }
 }
@@ -245,8 +245,8 @@ void DATA_String(){ //Take the matrix and tranforms it to a string to write in S
 void CLEAN_Matrix(){
   for (int k = 0; k < MAX_SIZE; k++) {
     for (int j = 0; j < 9; j++) {
-        can_vector[i][j] = 0;
+      can_vector[k][j] = 0;
     }
   }
+  i=0;
 }
-
