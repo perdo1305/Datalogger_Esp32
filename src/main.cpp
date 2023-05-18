@@ -5,7 +5,7 @@
 #include <EEPROM.h>
 #include <CAN.h>    //https://github.com/sandeepmistry/arduino-CAN/tree/master/src
 
-#define MAX_SIZE 50 // Maximum size of the matrix
+#define MAX_SIZE 40 // Maximum size of the matrix
 #define SCK 14      //Custom spi pins
 #define MISO 2      //Custom spi pins
 #define MOSI 15     //Custom spi pins
@@ -14,7 +14,7 @@
 #define ON_BOARD_LED 25 //led pcb datalogger
 
 
-int flag1=0,flag2=0,flag3=0,flag4=0,flag_lixo=0,i=0; 
+int flag1=0,flag2=0,flag3=0,flag4=0,i=0; 
 long int previousMillis=0;
 unsigned int can_vector[MAX_SIZE][9];
 unsigned int eeprom_count,eeprom_print;
@@ -95,7 +95,6 @@ void TASK2_READ_CAN(void* arg){
     if(flag1==1){
       printf("task2\r\n");
     }
-    
     Read_Can();
     digitalWrite(ON_BOARD_LED,LOW);
     //vTaskDelay(5/portTICK_PERIOD_MS);
@@ -145,7 +144,6 @@ void setup() {
   printf("2 - Show Matrix\r\n");
   printf("3 - Write to SD Card\r\n");
   printf("4 - Clean Matrix\r\n");
-
 }
 
 void loop() {
@@ -207,13 +205,11 @@ void Read_Can(){ // catch the id and create new line on the matrix
   if (packetSize != 0){
     digitalWrite(ON_BOARD_LED, HIGH);
     ID = CAN.packetId();
-    flag_lixo = 0;
     int found;
     do{ // check if ID already exists in the vector
-        if (ID >= 200){ // limpar lixo
-        flag_lixo = 1;
+        if (ID < 0x61 || ID > 0x72){ // restringir ids recebidos
+        return;
         }
-        if (flag_lixo != 1){
         found = 0;
         for (int j = 0; j < i; j++)
         {
@@ -229,16 +225,12 @@ void Read_Can(){ // catch the id and create new line on the matrix
             break;
           }
         }
-        if (!found)
-        {
+        if (!found){
           can_vector[i][0] = ID;
           i++;
           // printf("ID added to the matrix.\n");
         }
-        }
-    }
-
-    while (i < MAX_SIZE && found == 0 && !(flag_lixo == 1));
+    }while (i < MAX_SIZE && found == 0);
   }
 }
 
