@@ -5,7 +5,7 @@
 #include <EEPROM.h>
 #include <CAN.h>    //https://github.com/sandeepmistry/arduino-CAN/tree/master/src
 
-#define MAX_SIZE 20 // Maximum size of the matrix
+#define MAX_SIZE 50 // Maximum size of the matrix
 #define SCK 14      //Custom spi pins
 #define MISO 2      //Custom spi pins
 #define MOSI 15     //Custom spi pins
@@ -14,7 +14,7 @@
 #define ON_BOARD_LED 25 //led pcb datalogger
 
 
-int flag1=0,flag2=0,flag3=0,flag4=0,i=0; 
+int flag1=0,flag2=0,flag3=0,flag4=0,flag_lixo=0,i=0; 
 long int previousMillis=0;
 unsigned int can_vector[MAX_SIZE][9];
 unsigned int eeprom_count,eeprom_print;
@@ -95,6 +95,7 @@ void TASK2_READ_CAN(void* arg){
     if(flag1==1){
       printf("task2\r\n");
     }
+    
     Read_Can();
     digitalWrite(ON_BOARD_LED,LOW);
     //vTaskDelay(5/portTICK_PERIOD_MS);
@@ -119,7 +120,7 @@ void setup() {
   EEPROM.begin(EEPROM_SIZE);
   CAN.setPins(22, 21); //(rx,tx)
 
-  //EEPROM.write(0, 0);
+  //EEPROM.write(0,0);
   //EEPROM.commit();
 
   /*--------------initializes Can--------------*/
@@ -132,15 +133,15 @@ void setup() {
 
   pinMode(ON_BOARD_LED,OUTPUT);
   
-  xTaskCreate(TASK1_PRINT,"task 1",10000,NULL,tskIDLE_PRIORITY,NULL);
-  xTaskCreate(TASK2_READ_CAN,"task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
-  xTaskCreate(TASK3_WRITE_SD,"task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK1_PRINT,    "task 1",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK2_READ_CAN, "task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK3_WRITE_SD, "task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
 
   delay(500);//just a litle break before it starts to read
   CLEAN_Matrix();
   
   printf("\n########################### DATALOGGER ###########################\r\n\n");
-  printf("1 - Show Tasks\r\n");
+  printf("1 - Show Tasks\r\n"); 
   printf("2 - Show Matrix\r\n");
   printf("3 - Write to SD Card\r\n");
   printf("4 - Clean Matrix\r\n");
@@ -185,8 +186,8 @@ void Init_Sd_Card(){ //Setup SDcard
     Serial.println("File doesn't exist");
     Serial.println("Creating file...");
 
-    eeprom_count = EEPROM.read(0);
-    eeprom_print = eeprom_count;
+    //eeprom_count = EEPROM.read(0);
+    //eeprom_print = eeprom_count;
 
     sprintf(file_name,"/DATA_%d.csv",eeprom_count);
     writeFile(SD, file_name, Header.c_str());
@@ -200,42 +201,56 @@ void Init_Sd_Card(){ //Setup SDcard
   file.close();
 }
 
-void Read_Can(){//catch the id and create new line on the matrix
+void Read_Can(){ // catch the id and create new line on the matrix
   int ID;
   int packetSize = CAN.parsePacket();
   if (packetSize != 0){
-    digitalWrite(ON_BOARD_LED,HIGH);
+    digitalWrite(ON_BOARD_LED, HIGH);
     ID = CAN.packetId();
+    flag_lixo = 0;
     int found;
-    do {// check if ID already exists in the vector
-      found = 0;
-      for (int j = 0; j < i; j++) {
-        if (can_vector[j][0] == ID) {
-          //printf("ID already exists in the matrix: %d,%d,%d\n",i,j,found);
-          int row=j;
-          for(int k = 0; k < 8;k ++){//LER BYTES!
-            can_vector[row][k+1]=CAN.read();//[x,b0,b1,b2,b3,b4,b5,b6,b7]
-          }
-          found = 1;
-          break;
+    do{ // check if ID already exists in the vector
+        if (ID >= 200){ // limpar lixo
+        flag_lixo = 1;
         }
-      }
-      if (!found) {
-        can_vector[i][0] = ID;
-        i++;
-        //printf("ID added to the matrix.\n");
-      } 
-    } while (i < MAX_SIZE && found==0);
+        if (flag_lixo != 1){
+        found = 0;
+        for (int j = 0; j < i; j++)
+        {
+          if (can_vector[j][0] == ID)
+          {
+            // printf("ID already exists in the matrix: %d,%d,%d\n",i,j,found);
+            int row = j;
+            for (int k = 0; k < 8; k++)
+            {                                      // LER BYTES!
+              can_vector[row][k + 1] = CAN.read(); //[x,b0,b1,b2,b3,b4,b5,b6,b7]
+            }
+            found = 1;
+            break;
+          }
+        }
+        if (!found)
+        {
+          can_vector[i][0] = ID;
+          i++;
+          // printf("ID added to the matrix.\n");
+        }
+        }
+    }
+
+    while (i < MAX_SIZE && found == 0 && !(flag_lixo == 1));
   }
 }
 
 void DATA_String(){ //Take the matrix and tranforms it to a string to write in SDcard
-  char dataMessage[1000];
+  char dataMessage[2000];
   dataMessage[0] = '\0';
   for(int i =0; i< MAX_SIZE;i++){//escrever so ate row?
     for (int j =0; j<9;j++){
       sprintf(dataMessage + strlen(dataMessage),"%d",can_vector[i][j]);//pesqeuisar unigned int
-      sprintf(dataMessage + strlen(dataMessage), ";");
+      if (j<8){
+        sprintf(dataMessage + strlen(dataMessage), ";");
+      }
     } 
     sprintf(dataMessage + strlen(dataMessage),"\n");
   }
