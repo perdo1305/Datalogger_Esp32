@@ -3,7 +3,8 @@
 #include <SD.h>
 #include <SPI.h>
 #include <EEPROM.h>
-#include <CAN.h>    //https://github.com/sandeepmistry/arduino-CAN/tree/master/src
+//#include <ESP32_CAN.h>
+#include "C:\Users\pedro\OneDrive - IPLeiria\Documents\PlatformIO\Projects\TESTE\lib\ESP32universal_CAN-master\ESP32universal_CAN-master\src\ESP32_CAN.h"
 
 #define MAX_SIZE 40 // Maximum size of the matrix
 #define SCK 14      //Custom spi pins
@@ -14,7 +15,11 @@
 #define ON_BOARD_LED 25 //led pcb datalogger
 
 
-int flag1=0,flag2=0,flag3=0,flag4=0,i=0; 
+int flag1=0,flag2=0,flag3=0,flag4=0,i=0;
+int len=0;
+int atual=0;
+int previous=0;
+int previous2=0; 
 long int previousMillis=0;
 unsigned int can_vector[MAX_SIZE][9];
 unsigned int eeprom_count,eeprom_print;
@@ -23,6 +28,8 @@ char file_name[20];
 const String Header = "@@@@@@@@@@@@@@ DATALOGGER @@@@@@@@@@@@@@\n"; //1st thing to write in the SD
 
 SPIClass spi = SPIClass(VSPI); //Custom spi pins shit
+TWAI_Interface CAN1(1000, 21, 22); // argument 1 - BaudRate,  argument 2 - CAN_TX PIN,  argument 3 - CAN_RX PIN
+
 
 //##### Define functions #####
 void CHECK_Serial(void);    //Reads keyboard keys
@@ -30,6 +37,7 @@ void Read_Can(void);        //Catch the id and create new line on the matrix
 void Init_Sd_Card(void);    //Setup SDcard
 void DATA_String(void);     //create a msg to send to the sd card
 void CLEAN_Matrix(void);    //put 0's on the matrix
+void Can_Reset(void);
 
 //####################### SD CARD FUNCTIONS NO MEXER #######################
 //##########################################################################
@@ -117,26 +125,19 @@ void TASK3_WRITE_SD(void* arg){
 void setup() {
   Serial.begin(115200);//Starts serial monitor
   EEPROM.begin(EEPROM_SIZE);
-  CAN.setPins(22, 21); //(rx,tx)
-
+  
   //EEPROM.write(0,0);
   //EEPROM.commit();
 
-  /*--------------initializes Can--------------*/
-  if (!CAN.begin(1000E3)){ //1 Mbit/second
-    printf("Starting CAN failed!\r\n");
-    while (1);
-  }
  
-  Init_Sd_Card();//initializes the SDcard
-
   pinMode(ON_BOARD_LED,OUTPUT);
   
   xTaskCreate(TASK1_PRINT,    "task 1",10000,NULL,tskIDLE_PRIORITY,NULL);
   xTaskCreate(TASK2_READ_CAN, "task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
   xTaskCreate(TASK3_WRITE_SD, "task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
 
-  delay(500);//just a litle break before it starts to read
+  delay(200);//just a litle break before it starts to read
+  Init_Sd_Card();//initializes the SDcard
   CLEAN_Matrix();
   
   printf("\n########################### DATALOGGER ###########################\r\n\n");
@@ -147,7 +148,13 @@ void setup() {
 }
 
 void loop() {
+  
   CHECK_Serial();
+  /*
+  if(i!=0){
+    Can_Reset();
+  }
+  */
 }
 
 void CHECK_Serial(){
@@ -184,8 +191,8 @@ void Init_Sd_Card(){ //Setup SDcard
     Serial.println("File doesn't exist");
     Serial.println("Creating file...");
 
-    //eeprom_count = EEPROM.read(0);
-    //eeprom_print = eeprom_count;
+    eeprom_count = EEPROM.read(0);
+    eeprom_print = eeprom_count;
 
     sprintf(file_name,"/DATA_%d.csv",eeprom_count);
     writeFile(SD, file_name, Header.c_str());
@@ -201,13 +208,12 @@ void Init_Sd_Card(){ //Setup SDcard
 
 void Read_Can(){ // catch the id and create new line on the matrix
   int ID;
-  int packetSize = CAN.parsePacket();
-  if (packetSize != 0){
+  ID = CAN1.RXpacketBegin(); // Get Frame ID //Make Sure this ir running in the loop 
+  if (ID != 0){
     digitalWrite(ON_BOARD_LED, HIGH);
-    ID = CAN.packetId();
     int found;
     do{ // check if ID already exists in the vector
-        if (ID < 0x61 || ID > 0x72){ // restringir ids recebidos
+        if (ID < 0x60 || ID > 0x72){ // restringir ids recebidos
         return;
         }
         found = 0;
@@ -217,9 +223,8 @@ void Read_Can(){ // catch the id and create new line on the matrix
           {
             // printf("ID already exists in the matrix: %d,%d,%d\n",i,j,found);
             int row = j;
-            for (int k = 0; k < 8; k++)
-            {                                      // LER BYTES!
-              can_vector[row][k + 1] = CAN.read(); //[x,b0,b1,b2,b3,b4,b5,b6,b7]
+            for (int k = 0; k < 8; k++){           // LER BYTES!
+              can_vector[row][k + 1] = CAN1.RXpacketRead(k); //[x,b0,b1,b2,b3,b4,b5,b6,b7]
             }
             found = 1;
             break;
@@ -246,6 +251,7 @@ void DATA_String(){ //Take the matrix and tranforms it to a string to write in S
     } 
     sprintf(dataMessage + strlen(dataMessage),"\n");
   }
+    len = strlen(dataMessage);
     appendFile(SD, file_name , dataMessage);
 }
 
