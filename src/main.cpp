@@ -3,6 +3,8 @@
 #include <SD.h>
 #include <SPI.h>
 #include <EEPROM.h>
+#include <Wire.h>
+#include <RTClib.h>
 //#include <ESP32_CAN.h>
 #include "C:\Users\pedro\OneDrive - IPLeiria\Documents\PlatformIO\Projects\TESTE\lib\ESP32universal_CAN-master\ESP32universal_CAN-master\src\ESP32_CAN.h"
 
@@ -13,9 +15,16 @@
 #define CS 13       //Custom spi pins
 #define EEPROM_SIZE 1
 #define ON_BOARD_LED 25 //led pcb datalogger
+#define SDA 33    //i2c rtc pins
+#define SCL 32    //i2c rtc pins
 
 
-int flag1=0,flag2=0,flag3=0,flag4=0,i=0;
+RTC_DS3231 rtc;
+char rtc_time[32];
+
+
+unsigned int flag1=0,flag2=0,flag3=0,flag4=0,i=0;
+int millis_count=0;
 int len=0;
 int atual=0;
 int previous=0;
@@ -36,8 +45,8 @@ void CHECK_Serial(void);    //Reads keyboard keys
 void Read_Can(void);        //Catch the id and create new line on the matrix
 void Init_Sd_Card(void);    //Setup SDcard
 void DATA_String(void);     //create a msg to send to the sd card
-void CLEAN_Matrix(void);    //put 0's on the matrix
-void Can_Reset(void);
+void CLEAN_Matrix(void);    //put 0's on the matrix      
+void Update_RTC(void);     
 
 //####################### SD CARD FUNCTIONS NO MEXER #######################
 //##########################################################################
@@ -124,11 +133,16 @@ void TASK3_WRITE_SD(void* arg){
 
 void setup() {
   Serial.begin(115200);//Starts serial monitor
+
   EEPROM.begin(EEPROM_SIZE);
-  
   //EEPROM.write(0,0);
   //EEPROM.commit();
 
+  Wire.setPins (SDA,SCL);
+  Wire.begin();
+  rtc.begin();
+  //rtc.adjust(DateTime(F(__DATE__),F(__TIME__)));
+  //rtc.adjust(DateTime(2023, 1, 21, 5, 0, 0));
  
   pinMode(ON_BOARD_LED,OUTPUT);
   
@@ -136,9 +150,12 @@ void setup() {
   xTaskCreate(TASK2_READ_CAN, "task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
   xTaskCreate(TASK3_WRITE_SD, "task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
 
-  delay(200);//just a litle break before it starts to read
+  delay(10);//just a litle break before it starts to read
+
   Init_Sd_Card();//initializes the SDcard
   CLEAN_Matrix();
+
+  delay(10);//just a litle break before it starts to read
   
   printf("\n########################### DATALOGGER ###########################\r\n\n");
   printf("1 - Show Tasks\r\n"); 
@@ -195,7 +212,9 @@ void Init_Sd_Card(){ //Setup SDcard
     eeprom_print = eeprom_count;
 
     sprintf(file_name,"/DATA_%d.csv",eeprom_count);
-    writeFile(SD, file_name, Header.c_str());
+    Update_RTC();
+    //writeFile(SD, file_name, Header.c_str());
+    writeFile(SD, file_name, rtc_time);
 
     eeprom_count++;
     EEPROM.write(0, eeprom_count);
@@ -213,9 +232,11 @@ void Read_Can(){ // catch the id and create new line on the matrix
     digitalWrite(ON_BOARD_LED, HIGH);
     int found;
     do{ // check if ID already exists in the vector
+        /*
         if (ID < 0x60 || ID > 0x72){ // restringir ids recebidos
         return;
         }
+        */
         found = 0;
         for (int j = 0; j < i; j++)
         {
@@ -242,9 +263,11 @@ void Read_Can(){ // catch the id and create new line on the matrix
 void DATA_String(){ //Take the matrix and tranforms it to a string to write in SDcard
   char dataMessage[2000];
   dataMessage[0] = '\0';
+  sprintf(dataMessage + strlen(dataMessage),"%d\n",millis_count*5);
+  millis_count++;
   for(int i =0; i< MAX_SIZE;i++){//escrever so ate row?
     for (int j =0; j<9;j++){
-      sprintf(dataMessage + strlen(dataMessage),"%d",can_vector[i][j]);//pesqeuisar unigned int
+      sprintf(dataMessage + strlen(dataMessage),"%d",can_vector[i][j]);//pesquisar unsigned int
       if (j<8){
         sprintf(dataMessage + strlen(dataMessage), ";");
       }
@@ -262,4 +285,9 @@ void CLEAN_Matrix(){
     }
   }
   i=0;
+}
+
+void Update_RTC(){
+  DateTime now = rtc.now();
+  sprintf(rtc_time, "%02d:%02d:%02d %02d/%02d/%02d\n", now.hour(), now.minute(), now.second(), now.day(), now.month(), now.year());
 }
