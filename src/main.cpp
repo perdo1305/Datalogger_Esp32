@@ -1,21 +1,18 @@
-/*
-Datalogger 2023
-Pedro Ferreira
-Eletronics Department
-*/
+/*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+                DATALOGGER ESP32 2023
+                  Pedro Ferreira
+              Eletronics Department
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*/
 
 #include <Arduino.h>
-//#include <FS.h>
-//#include <SD.h>
 #include "FS.h"
 #include "SD_MMC.h"
 #include <SPI.h>
 #include <EEPROM.h>
 #include <Wire.h>
 #include <RTClib.h>
-//#include <ESP32_CAN.h>
 #include "C:\Users\pedro\OneDrive - IPLeiria\Documents\PlatformIO\Projects\TESTE\lib\ESP32universal_CAN-master\ESP32universal_CAN-master\src\ESP32_CAN.h"
-
+//--------------------------------------------------------------------------------------------------
 #define MAX_SIZE 40     // Maximum size of the matrix
 #define SCK 14          //Custom spi pins
 #define MISO 2          //Custom spi pins
@@ -28,76 +25,76 @@ Eletronics Department
 #define BUTTON_PIN 35   //pcb button
 #define RXD1 26         //Serie para a telemetria
 #define TXD1 27         //Serie para a telemetria
+//--------------------------------------------------------------------------------------------------
+struct CarData_MAIN
+{                               // 32 Bytes
+  uint16_t  RPM = 0;            // 0-65536
+  uint8_t   VSPD = 0;           // 0-160
+  uint8_t   APPS1 = 0;          // 0-100
+  uint8_t   BRAKE = 0;          // 0-1  
+  uint8_t   DBWPOS = 0;         // 0-100
+  uint8_t   LAMBDA = 0;         // 0-2
+  uint8_t   OILT = 0;           // 0-160
+  uint8_t   OILP = 0;           // 0-12
+  uint16_t  ENGT1 = 0;          // 0-1100
+  uint16_t  ENGT2 = 0;          // 0-1100
+  uint8_t   BATV = 0;           // 0-20
+  uint8_t   IAT = 0;            // 0-167 subtrair 40 no labView
+  uint8_t   MAP = 0;            // 0-4
+  uint16_t  CLT = 0;            // 0-290 subtrair 40 no labView
+  uint8_t   FUELP = 0;          // 0-1
+  uint8_t   IGNANG = 0;         // 0-20
+  uint8_t   CBUSLD = 0;         // 0-100
+  uint8_t   LAMCORR = 0;        // 75-125
+  uint8_t   ECUT = 0;           // 0-4
+  uint8_t   DBWTRGT = 0;        // 0-100
+  uint8_t   ACCX = 0;           // 0-20
+  uint8_t   DataLoggerSTAT = 0; // 0-100
+  uint8_t   GearValue = 0;      // 0-1
+  uint8_t   ROLL = 0;           // 75-125
+  uint8_t   PITCH = 0;          // 0-4
+  uint8_t   YAW = 0;            // 0-100
+  uint8_t   LOGSTAT = 0;        // 0-20
 
-int lastSecond = -1;          //RTC
-unsigned long lastMillis = 0; //RTC    
-
-boolean Button_State = 0;
-struct CarData_MAIN { //32 Bytes
-  uint16_t  RPM       =  0; //0-65536
-  uint8_t   VSPD      =  0; //0-160
-  uint8_t   APPS1     =  0; //0-100
-  uint8_t   BRAKE     =  0; //0-1
-  uint8_t   DBWPOS    =  0; //0-100
-  uint8_t   LAMBDA    =  0; //0-2
-  uint8_t   OILT      =  0; //0-160
-  uint8_t   OILP      =  0; //0-12
-  uint16_t  ENGT1     =  0; //0-1100
-  uint16_t  ENGT2     =  0; //0-1100
-  uint8_t   BATV      =  0; //0-20
-  uint8_t   IAT       =  0; //0-167 subtrair 40 no labView
-  uint8_t   MAP       =  0; //0-4
-  uint16_t  CLT       =  0; //0-290 subtrair 40 no labView
-  uint8_t   FUELP     =  0; //0-1
-  uint8_t   IGNANG    =  0; //0-20
-  uint8_t   CBUSLD    =  0; //0-100
-  uint8_t   LAMCORR   =  0; //75-125
-  uint8_t   ECUT      =  0; //0-4
-  uint8_t   DBWTRGT   =  0; //0-100
-  uint8_t   ACCX      =  0; //0-20
-  uint8_t   DataLoggerSTAT      =  0; //0-100
-  uint8_t   GearValue =  0; //0-1
-  uint8_t   ROLL      =  0; //75-125
-  uint8_t   PITCH     =  0; //0-4
-  uint8_t   YAW       =  0; //0-100
-  uint8_t   LOGSTAT   =  0; //0-20
-
-  char      inicio    = 10; //END
+  char inicio = 10; // END
 };
 struct CarData_MAIN carDataMain;
 
-
+//  REAL TIME CLOCK THINGS------------------------------
 RTC_DS3231 rtc;
 char rtc_time[32];
+char buffer[20]={0};//rtc update function
+int lastSecond = -1;          //RTC
+unsigned long lastMillis = 0; //RTC  
 
-uint8_t flag1=0,flag2=0,flag3=0,flag4=0; //serial menu
+uint8_t flag1=0;  //serial menu
+uint8_t flag2=0;  //serial menu
+uint8_t flag3=0;  //serial menu
+uint8_t flag4=0;  //serial menu
 
+//  CAN MATRIX THINGS------------------------------------
+uint8_t can_vector[MAX_SIZE][9];
 uint8_t Current_Max_Row=0; 
 
-uint32_t millis_count=0;
-uint32_t previousMillis=0;
-
-uint8_t can_vector[MAX_SIZE][9];
-
-char NUM_file=0;
+// FILE STUFF--------------------------------------------
+char    NUM_file=0;     //number on config file
 uint8_t eeprom_count,eeprom_print;
+uint32_t previousMillis=0;  //millis print eeprom number
+uint32_t previousMillis_2=0; //IN LOOP
 
-char file_name[20];
+char file_name[20]; //main file data name
 
-char buffer[20]={0};//rtc update function
+// LED and BUTTONS STATES--------------------------------
+boolean Button_State = 0;
+boolean LED_25=0; //state led pcb
+boolean LED_5=0;  //state led esp32
 
-boolean LED_25=0;
-boolean LED_5=0;
-
-//const String Header = "@@@@@@@@@@@@@@ DATALOGGER @@@@@@@@@@@@@@\n"; //1st thing to write in the SD
-//SPIClass spi = SPIClass(VSPI);      //Custom spi pins shit
-
+// CAN INIT----------------------------------------------
 TWAI_Interface CAN1(1000, 21, 22);  // argument 1 - BaudRate,  argument 2 - CAN_TX PIN,  argument 3 - CAN_RX PIN
 
-int row60,row61;
+int row60,row61;//telemetria stuff
 
-
-//##### Define functions #####
+//##### Define functions ##################################################
 void CHECK_Serial(void);    //Reads keyboard keys
 void Read_Can(void);        //Catch the id and create new line on the matrix
 void Init_Sd_Card(void);    //Setup SDcard
@@ -127,10 +124,11 @@ void writeFile(fs::FS &fs, const char *path, const char *message) {
 void appendFile(fs::FS &fs, const char *path, const char *message) {
   //Serial.printf("Appending to file: %s\n", path);
   File file = fs.open(path, FILE_APPEND);
+  /*
   if (!file) {
     //Serial.println("Failed to open file for appending");
     return;
-  }
+  }*/
   if (file.print(message)) {
     LED_5 = !LED_5;
     digitalWrite(5,LED_5);
@@ -186,19 +184,20 @@ void TASK1_PRINT(void* arg){
       printf("MATRIX CLEANED\r\n");
       CLEAN_Matrix();
     }
-    vTaskDelay(300/portTICK_PERIOD_MS);
+    vTaskDelay(500/portTICK_PERIOD_MS);
   }
 }
+
 void TASK2_READ_CAN(void* arg){
   for(;;){
     if(flag1==1){
       printf("task2\r\n");
     }
     Read_Can();
-    
     //vTaskDelay(5/portTICK_PERIOD_MS);
   }
 }
+
 void TASK3_WRITE_SD(void* arg){
   for(;;){
     if(flag3==1){
@@ -211,11 +210,9 @@ void TASK3_WRITE_SD(void* arg){
   //long int tempo1= millis();
   DATA_String();
   //long int tempo2= millis();
-
-  //long int tempo_final=tempo1-tempo2;
+  //long int tempo_final=tempo2-tempo1;
   //printf("%d\n",tempo_final);
-
-    vTaskDelay(5/portTICK_PERIOD_MS);
+  vTaskDelay(5/portTICK_PERIOD_MS);
   }
 }
 
@@ -233,7 +230,6 @@ void TASK4_Telemetria(void* arg){
 
     Serial1.println("RPM"+String(carDataMain.RPM)+"OP"+String(carDataMain.OILP/10)+"ET"+String(carDataMain.CLT/10)+"BV"+String(carDataMain.BATV/10)+"GEAR"+String(carDataMain.GearValue)+"VS"+String(carDataMain.VSPD));
    
-
     vTaskDelay(10/portTICK_PERIOD_MS);
   }
 }
@@ -241,9 +237,9 @@ void TASK4_Telemetria(void* arg){
 void setup() {
 
   Serial.begin(115200);//Starts serial monitor
-  Serial1.begin(4800, SERIAL_8N1, RXD1, TXD1);
+  Serial1.begin(4800, SERIAL_8N1, RXD1, TXD1);//comunicação com a telemetria
 
-  EEPROM.begin(EEPROM_SIZE);
+  //EEPROM.begin(EEPROM_SIZE);
   //EEPROM.write(0,0);
   //EEPROM.commit();
 
@@ -261,14 +257,12 @@ void setup() {
   CLEAN_Matrix();
   delay(100);//just a litle break before it starts to read
 
-  
-  xTaskCreate(TASK1_PRINT,    "task 1",4096,NULL,tskIDLE_PRIORITY,NULL);
-  xTaskCreate(TASK2_READ_CAN, "task 2",4096,NULL,tskIDLE_PRIORITY,NULL);
-  xTaskCreate(TASK3_WRITE_SD, "task 3",8192,NULL,tskIDLE_PRIORITY,NULL);
-  xTaskCreate(TASK4_Telemetria,"task 4",4096,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK2_READ_CAN, "task 2",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK3_WRITE_SD, "task 3",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK1_PRINT,    "task 1",10000,NULL,tskIDLE_PRIORITY,NULL);
+  xTaskCreate(TASK4_Telemetria,"task 4",10000,NULL,tskIDLE_PRIORITY,NULL);
 
-
-  delay(10);//just a litle break before it starts to read
+  //delay(10);//just a litle break before it starts to read
   
   printf("\n\n########################### DATALOGGER ###########################\r\n\n");
   printf("1 - Show Tasks\r\n"); 
@@ -278,9 +272,11 @@ void setup() {
 }
 
 void loop() {
-  
-  CHECK_Serial();
-
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis_2 >= 100) {
+    previousMillis_2 = currentMillis;
+    CHECK_Serial();
+  }
 }
 
 void CHECK_Serial(){
@@ -356,22 +352,20 @@ void Read_Can(){ // catch the id and create new line on the matrix
     digitalWrite(ON_BOARD_LED,LED_25);
     boolean found;
     do{ // check if ID already exists in the vector
-        
+        /*
         if (ID < 0x60 || ID > 0x72){ // restringir ids recebidos
         return;
         }
-        
+        */
         found = 0;
   
-        for (int j = 0; j < Current_Max_Row; j++)
-        {
+        for (int j = 0; j < Current_Max_Row; j++){
 
           if (can_vector[j][0] == ID){
             // printf("ID already exists in the matrix: %d,%d,%d\n",i,j,found);
             uint8_t row = j;
             for (int k = 0; k < 8; k++){           // LER BYTES!
               can_vector[row][k + 1] = CAN1.RXpacketRead(k); //[x,b0,b1,b2,b3,b4,b5,b6,b7]
-
             }
             if(ID==96){
               row60=row;
@@ -399,16 +393,18 @@ void DATA_String(){ //Take the matrix and tranforms it to a string to write in S
 
   char dataMessage[1000];
   dataMessage[0] = '\0';
-    //Current_Max_Row
-  for(int i = 0; i<1 ;i++){
+
+  //for(int i = 0; i<MAX_SIZE ;i++){
+  for(int i = 0; i<Current_Max_Row ;i++){
     
     if(i==0){
       Update_RTC();
+      //memcpy(dataMessage, buffer, strlen(buffer) + 1);
       strcpy(dataMessage,buffer);
       sprintf( dataMessage + strlen(dataMessage),"\n");
     }
     
-    for (int j =0; j<9;j++){
+    for (int j =0; j<9;j++){ 
       sprintf(dataMessage + strlen(dataMessage),"%d",can_vector[i][j]);//pesquisar unsigned int
       if (j<8){
         sprintf(dataMessage + strlen(dataMessage), ";");
@@ -437,6 +433,7 @@ void DATA_String(){ //Take the matrix and tranforms it to a string to write in S
   //  sprintf(dataMessage + strlen(dataMessage),"\n");
   //}
   //y=0;
+  
   appendFile(SD_MMC, file_name , dataMessage);
 }
 
@@ -467,7 +464,6 @@ void Update_RTC(){ //falta colocar na string do cartao
   //char buffer[20];
   sprintf(buffer, "%02d:%02d:%02d.%03d", now.hour(), now.minute(), now.second(), milliseconds);
   //Serial.println(buffer);
-
 }
 
 void Telemetria_Send(){
@@ -505,7 +501,6 @@ void Telemetria_Send(){
   carDataMain.DBWPOS = CAN_Bus_Data[19];
   carDataMain.DBWTRGT = CAN_Bus_Data[20];
 
-
   carDataMain.DataLoggerSTAT = Logger_Status;
   carDataMain.GearValue = CAN_Bus_Data[44];
 
@@ -527,8 +522,6 @@ if(Serial1.readString().toInt()==30){
       D_Logger = 0;
     }
     }
-  
-   
   }
   */
   //Serial1.println("ola");
